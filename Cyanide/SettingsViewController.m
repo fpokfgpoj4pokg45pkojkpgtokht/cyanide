@@ -4157,8 +4157,12 @@ static void settings_schedule_live_apply_for_key(NSString *key)
         return;
     }
 
-    if ([key isEqualToString:kSettingsLiveWPEnabled] ||
-        [key isEqualToString:kSettingsLiveWPVideoPath]) {
+    if ([key isEqualToString:kSettingsLiveWPVideoPath]) {
+        settings_notify_package_queue_changed_async();
+        return;
+    }
+
+    if ([key isEqualToString:kSettingsLiveWPEnabled]) {
         if ([d boolForKey:kSettingsLiveWPEnabled] && g_springboard_rc_ready) {
             dispatch_async(dispatch_get_global_queue(0, 0), ^{
                 bool ok = false;
@@ -4484,7 +4488,7 @@ void settings_register_defaults(void)
         kSettingsThemerCustomThemeName: @"",
 
         kSettingsSnowBoardLiteEnabled: @NO,
-        kSettingsSnowBoardLiteSelectedThemeID: kSnowBoardLiteThemeBuiltinIOS6,
+        kSettingsSnowBoardLiteSelectedThemeID: @"",
 
         kSettingsLiveWPEnabled: @NO,
         kSettingsLiveWPVideoPath: @"",
@@ -5923,6 +5927,9 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
            @"title": @"Bottom Y offset", @"min": @(-40), @"max": @80, @"step": @1, @"unit": @"pt", @"default": @0 },
         @{ @"kind": @"slider", @"key": kSettingsNiceBarLiteLayoutCenterX,
            @"title": @"Center X offset", @"min": @(-120), @"max": @120, @"step": @1, @"unit": @"pt", @"default": @0 },
+        @{ @"kind": @"button",
+           @"title": @"Apply Now",
+           @"action": @"nicebar-apply" },
     ]];
     return rows;
 }
@@ -6923,6 +6930,36 @@ static _CyanideMailDelegate *_cyanide_mail_delegate(void) {
     return YES;
 }
 
+- (void)finishLiveWPVideoImportAndSwapIfRunning
+{
+    [self reloadSectionOrAll:SectionLiveWP];
+
+    BOOL applied = settings_tweak_is_applied(kSettingsLiveWPEnabled);
+    log_user("[LIVEWP] import: applied=%d rc_ready=%d\n", applied, g_springboard_rc_ready);
+    if (!applied || !g_springboard_rc_ready) {
+        settings_notify_package_queue_changed_async();
+        return;
+    }
+
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        bool ok = false;
+        @synchronized (settings_rc_lock()) {
+            if (settings_cleanup_in_progress() || !g_springboard_rc_ready) return;
+            NSString *path = livewp_absolute_path();
+            log_user("[LIVEWP] import: swap path=%s\n", path ? path.UTF8String : "(nil)");
+            if (path.length > 0) {
+                ok = livewp_swap_video_in_session(path);
+                settings_mark_tweak_applied(kSettingsLiveWPEnabled, ok);
+            }
+        }
+        log_user("%s LiveWP video swap %s.\n",
+                 ok ? "[OK]" : "[WARN]",
+                 ok ? "completed" : "did not complete");
+        if (ok) settings_start_livewp_live_loop();
+        settings_notify_package_queue_changed_async();
+    });
+}
+
 - (BOOL)importThemerFolderAtURL:(NSURL *)url error:(NSError **)error
 {
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -7020,8 +7057,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
         if ([mode isEqualToString:@"livewp"]) {
             ok = [self importLiveWPVideoAtURL:url error:&err];
             successTitle = @"Video Selected";
-            successMessage = [NSString stringWithFormat:@"%@ is ready. Toggle LiveWP on and tap Run to apply.",
-                              url.lastPathComponent ?: @"Video"];
+            BOOL liveReady = settings_tweak_is_applied(kSettingsLiveWPEnabled) && g_springboard_rc_ready;
+            successMessage = liveReady
+                ? [NSString stringWithFormat:@"%@ was imported and will swap into the running LiveWP session.",
+                                             url.lastPathComponent ?: @"Video"]
+                : [NSString stringWithFormat:@"%@ is ready. Toggle LiveWP on and tap Run to apply.",
+                                             url.lastPathComponent ?: @"Video"];
         } else if ([mode isEqualToString:@"snowboardlite"]) {
             if (isDir) {
                 ok = settings_sbl_import_folder_theme(url, &err);
@@ -7069,15 +7110,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls
                     [self.tableView reloadData];
                 }
             } else if ([mode isEqualToString:@"livewp"]) {
-                settings_mark_tweak_applied(kSettingsLiveWPEnabled, NO);
-                settings_notify_package_queue_changed_async();
-                if (self.detailMode && self.underlyingSection == SectionLiveWP) {
-                    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0]
-                                  withRowAnimation:UITableViewRowAnimationAutomatic];
-                } else {
-                    [self.tableView reloadData];
-                }
-                settings_schedule_live_apply_for_key(kSettingsLiveWPVideoPath);
+                [self finishLiveWPVideoImportAndSwapIfRunning];
             } else {
                 [self reloadThemerSectionAndQueue];
             }
@@ -9390,6 +9423,28 @@ void cyanide_present_contact(UIViewController *host)
     if (indexPath.section == SectionNiceBarLite) {
         NSDictionary *row = [self rowsForSection:indexPath.section][indexPath.row];
         NSString *action = row[@"action"];
+        if ([action isEqualToString:@"nicebar-apply"]) {
+            if (!g_springboard_rc_ready) {
+                log_user("[NICEBAR] Needs an active SpringBoard session. Hit Run first.\n");
+                return;
+            }
+            NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+            [d setBool:YES forKey:kSettingsNiceBarLiteEnabled];
+            [d synchronize];
+            log_user("[NICEBAR] Manual apply requested.\n");
+            dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                bool ok = false;
+                @synchronized (settings_rc_lock()) {
+                    if (settings_cleanup_in_progress() || !g_springboard_rc_ready) return;
+                    ok = settings_apply_nicebarlite_from_defaults_locked(d);
+                    settings_mark_tweak_applied(kSettingsNiceBarLiteEnabled, ok);
+                }
+                log_user("%s NiceBar Lite applied now.\n", ok ? "[OK]" : "[WARN]");
+                if (ok) settings_start_nicebarlite_live_loop();
+                settings_notify_package_queue_changed_async();
+            });
+            return;
+        }
         if ([action hasPrefix:@"nicebar-slot-"]) {
             NSInteger slot = [[action substringFromIndex:[@"nicebar-slot-" length]] integerValue];
             if (slot >= 0 && slot < NiceBarLiteSlotCount) {

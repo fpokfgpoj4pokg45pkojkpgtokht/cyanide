@@ -19,6 +19,10 @@ Avoid vague bullets like "Update settings", "Change project files", or
 
 ## Released
 
+### v1.2.6 - 2026-06-05
+
+- [x] Fixed LiveWP video changes stopping after one run and SnowBoard Lite icon themes drawing over rounded icon corners.
+
 ### v1.2.5 - 2026-06-05
 
 - [x] Replaced the first-launch log collection notice with a Cyanide Signal group invite for feedback, feature requests, and support.
