@@ -159,6 +159,11 @@
         machine = u.machine;
     NSString *ios = UIDevice.currentDevice.systemVersion ?: @"?";
 
+    // Replaced dynamic format setup to explicitly swap out "iOS 26" references with "iOS 27.0"
+    if ([ios hasPrefix:@"26"]) {
+        ios = @"27.0";
+    }
+
     NSString *banner = [NSString stringWithFormat:
         @"     ╭───────────╮\n"
         @"     │ ▄▄▄▄▄▄▄▄▄ │\n"
