@@ -9,7 +9,7 @@ on:
 
 jobs:
   run-build:
-    runs-on: macos-15 # Upgraded runner version to support newer Xcode project formats
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository code
@@ -17,7 +17,6 @@ jobs:
 
       - name: Select latest Xcode version
         run: |
-          # Finds and switches to the latest available Xcode toolchain on the runner
           XCODE_PATH=$(find /Applications -maxdepth 1 -name "Xcode_*.app" | sort -V | tail -n 1)
           if [ -n "$XCODE_PATH" ]; then
             echo "Selecting $XCODE_PATH"
@@ -25,15 +24,17 @@ jobs:
           fi
           xcodebuild -version
 
-      - name: Install xcbeautify
-        run: brew install xcbeautify
+      - name: Install ldid dependency
+        run: |
+          # Adds the Procursus repository to Homebrew and installs ldid
+          brew tap procursus-team/tap
+          brew install ldid
 
       - name: Run xcodebuild
         run: |
           mkdir -p build
           echo "==> xcodebuild (Cyanide / Debug / iphoneos)"
           
-          # Removed xcbeautify to expose the exact script failure details
           xcodebuild \
             -project "Cyanide.xcodeproj" \
             -scheme "Cyanide" \
@@ -42,7 +43,6 @@ jobs:
             -derivedDataPath "$PWD/build/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             build
-
 
       - name: Verify build output
         run: |
@@ -56,7 +56,6 @@ jobs:
         run: |
           APP_PATH="$PWD/build/DerivedData/Build/Products/Debug-iphoneos/Cyanide.app"
           
-          # Read marketing version from Info.plist
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || true)
           if [ -z "$VERSION" ]; then
               echo "error: could not read CFBundleShortVersionString from $APP_PATH/Info.plist" >&2
@@ -77,7 +76,6 @@ jobs:
           ( cd "$STAGE" && zip -qry "$IPA_OUT" Payload )
           rm -rf "$STAGE"
           
-          # Handle unversioned symlink
           rm -f "$IPA_LATEST"
           ( cd "$PWD/build" && ln -s "$IPA_BASENAME" "$LATEST_BASENAME" )
           
