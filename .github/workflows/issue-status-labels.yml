@@ -33,6 +33,7 @@ jobs:
           mkdir -p build
           echo "==> xcodebuild (Cyanide / Debug / iphoneos)"
           
+          # Removed xcbeautify to expose the exact script failure details
           xcodebuild \
             -project "Cyanide.xcodeproj" \
             -scheme "Cyanide" \
@@ -40,16 +41,8 @@ jobs:
             -configuration "Debug" \
             -derivedDataPath "$PWD/build/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            build \
-            | xcbeautify --quiet 2>/dev/null \
-            || xcodebuild \
-                 -project "Cyanide.xcodeproj" \
-                 -scheme "Cyanide" \
-                 -sdk "iphoneos" \
-                 -configuration "Debug" \
-                 -derivedDataPath "$PWD/build/DerivedData" \
-                 CODE_SIGNING_ALLOWED=NO \
-                 build
+            build
+
 
       - name: Verify build output
         run: |
