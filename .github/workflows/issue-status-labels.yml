@@ -9,11 +9,21 @@ on:
 
 jobs:
   run-build:
-    runs-on: macos-14 # Uses Apple Silicon runner for faster Xcode building
+    runs-on: macos-15 # Upgraded runner version to support newer Xcode project formats
 
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v4
+
+      - name: Select latest Xcode version
+        run: |
+          # Finds and switches to the latest available Xcode toolchain on the runner
+          XCODE_PATH=$(find /Applications -maxdepth 1 -name "Xcode_*.app" | sort -V | tail -n 1)
+          if [ -n "$XCODE_PATH" ]; then
+            echo "Selecting $XCODE_PATH"
+            sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          fi
+          xcodebuild -version
 
       - name: Install xcbeautify
         run: brew install xcbeautify
