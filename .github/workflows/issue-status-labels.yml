@@ -24,11 +24,13 @@ jobs:
           fi
           xcodebuild -version
 
-      - name: Install ldid dependency
+      - name: Install ldid binary directly
         run: |
-          # Adds the Procursus repository to Homebrew and installs ldid
-          brew tap procursus-team/tap
-          brew install ldid
+          # Download official compiled macos arm64 ldid binary directly from Procursus
+          curl -LO "https://github.com"
+          chmod +x ldid_macos_arm64
+          sudo mv ldid_macos_arm64 /usr/local/bin/ldid
+          ldid --version || true
 
       - name: Run xcodebuild
         run: |
