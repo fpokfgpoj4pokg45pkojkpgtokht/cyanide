@@ -5,11 +5,11 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # Allows you to run this manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
   run-build:
-    runs-on: macos-latest # Required if your build script compiles iOS code via xcodebuild
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository code
@@ -19,4 +19,6 @@ jobs:
         run: chmod +x ./scripts/build.sh
 
       - name: Run build script
+        env:
+          XCODEBUILD_EXTRA: "" # Prevents the unbound variable crash
         run: ./scripts/build.sh
