@@ -28,8 +28,8 @@ jobs:
         run: |
           # Download official compiled macos arm64 ldid binary directly from Procursus
           curl -LO "https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_macosx_arm64"
-          chmod +x ldid_macos_arm64
-          sudo mv ldid_macos_arm64 /usr/local/bin/ldid
+          chmod +x ./ldid_macos_arm64
+          sudo mv ./ldid_macos_arm64 /usr/local/bin/ldid
           ldid --version || true
 
       - name: Run xcodebuild
