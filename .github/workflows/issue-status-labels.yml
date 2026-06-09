@@ -1,4 +1,4 @@
-name: Build Project
+name: Build Cyanide Project
 
 on:
   push:
@@ -9,16 +9,82 @@ on:
 
 jobs:
   run-build:
-    runs-on: macos-latest
+    runs-on: macos-14 # Uses Apple Silicon runner for faster Xcode building
 
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      - name: Make script executable
-        run: chmod +x ./scripts/build.sh
+      - name: Install xcbeautify
+        run: brew install xcbeautify
 
-      - name: Run build script
-        env:
-          XCODEBUILD_EXTRA: "" # Prevents the unbound variable crash
-        run: ./scripts/build.sh
+      - name: Run xcodebuild
+        run: |
+          mkdir -p build
+          echo "==> xcodebuild (Cyanide / Debug / iphoneos)"
+          
+          xcodebuild \
+            -project "Cyanide.xcodeproj" \
+            -scheme "Cyanide" \
+            -sdk "iphoneos" \
+            -configuration "Debug" \
+            -derivedDataPath "$PWD/build/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build \
+            | xcbeautify --quiet 2>/dev/null \
+            || xcodebuild \
+                 -project "Cyanide.xcodeproj" \
+                 -scheme "Cyanide" \
+                 -sdk "iphoneos" \
+                 -configuration "Debug" \
+                 -derivedDataPath "$PWD/build/DerivedData" \
+                 CODE_SIGNING_ALLOWED=NO \
+                 build
+
+      - name: Verify build output
+        run: |
+          APP_PATH="$PWD/build/DerivedData/Build/Products/Debug-iphoneos/Cyanide.app"
+          if [ ! -d "$APP_PATH" ]; then
+              echo "error: $APP_PATH not found after build" >&2
+              exit 1
+          fi
+
+      - name: Package Unsigned IPA
+        run: |
+          APP_PATH="$PWD/build/DerivedData/Build/Products/Debug-iphoneos/Cyanide.app"
+          
+          # Read marketing version from Info.plist
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist" 2>/dev/null || true)
+          if [ -z "$VERSION" ]; then
+              echo "error: could not read CFBundleShortVersionString from $APP_PATH/Info.plist" >&2
+              exit 1
+          fi
+          
+          IPA_OUT="$PWD/build/Cyanide-${VERSION}.ipa"
+          IPA_LATEST="$PWD/build/Cyanide.ipa"
+          IPA_BASENAME=$(basename "$IPA_OUT")
+          LATEST_BASENAME=$(basename "$IPA_LATEST")
+          
+          echo "==> packaging $IPA_OUT (version $VERSION)"
+          STAGE=$(mktemp -d -t cyanide-ipa)
+          mkdir -p "$STAGE/Payload"
+          cp -R "$APP_PATH" "$STAGE/Payload/"
+          rm -f "$IPA_OUT"
+          
+          ( cd "$STAGE" && zip -qry "$IPA_OUT" Payload )
+          rm -rf "$STAGE"
+          
+          # Handle unversioned symlink
+          rm -f "$IPA_LATEST"
+          ( cd "$PWD/build" && ln -s "$IPA_BASENAME" "$LATEST_BASENAME" )
+          
+          SIZE=$(du -h "$IPA_OUT" | cut -f1)
+          echo "==> wrote $IPA_OUT ($SIZE)"
+          echo "==> symlink $IPA_LATEST -> $IPA_BASENAME"
+
+      - name: Upload Unsigned IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cyanide-Unsigned-IPA
+          path: build/*.ipa
+          if-no-files-found: error
